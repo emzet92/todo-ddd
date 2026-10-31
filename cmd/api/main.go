@@ -1,8 +1,9 @@
 package main
 
 import (
-	"context"
 	"log"
+	"net/http"
+	"time"
 
 	"example.com/todo-ddd/internal/bootstrap"
 )
@@ -10,14 +11,13 @@ import (
 func main() {
 	module := bootstrap.Init()
 
-	project, err := module.Projects.CreateProject(
-		context.Background(),
-		"project-1",
-		"My First Project",
-	)
-	if err != nil {
-		log.Fatal(err)
+	server := &http.Server{
+		Addr:              ":8080",
+		Handler:           module.HTTPHandler,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	log.Printf("Created project: %s", project.Name())
+	log.Println("HTTP server listening on :8080")
+
+	log.Fatal(server.ListenAndServe())
 }
