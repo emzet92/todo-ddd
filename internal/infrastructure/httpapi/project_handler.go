@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 
 	"example.com/todo-ddd/internal/application"
 	"example.com/todo-ddd/internal/domain"
@@ -45,23 +44,29 @@ func (h *ProjectHandler) create(
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&req); err != nil {
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		writeError(w, http.StatusBadRequest, "invalid JSON")
 		return
 	}
 
-	if strings.TrimSpace(req.ID) == "" ||
-		strings.TrimSpace(req.Name) == "" {
-		http.Error(w, "ID and name are required", http.StatusBadRequest)
-		return
-	}
-
-	project, err := h.service.CreateProject(
-		r.Context(),
-		domain.ProjectID(req.ID),
-		domain.ProjectName(req.Name),
-	)
+	id, err := domain.NewProjectID(req.ID)
 	if err != nil {
-		http.Error(w, "could not create project", http.StatusInternalServerError)
+		writeError(w, http.StatusBadRequest, "invalid project ID")
+		return
+	}
+
+	name, err := domain.NewProjectName(req.Name)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid project name")
+		return
+	}
+
+	project, err := h.service.CreateProject(r.Context(), id, name)
+	if err != nil {
+		if errors.Is(err, domain.ErrInvalidProjectID) || errors.Is(err, domain.ErrInvalidProjectName) {
+			writeError(w, http.StatusBadRequest, "invalid project")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "could not create project")
 		return
 	}
 
@@ -72,17 +77,21 @@ func (h *ProjectHandler) get(
 	w http.ResponseWriter,
 	r *http.Request,
 ) {
-	id := domain.ProjectID(r.PathValue("id"))
+	id, err := domain.NewProjectID(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid project ID")
+		return
+	}
 
 	project, err := h.service.GetProject(r.Context(), id)
 
 	if errors.Is(err, application.ErrProjectNotFound) {
-		http.Error(w, "project not found", http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "project not found")
 		return
 	}
 
 	if err != nil {
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal server error")
 		return
 	}
 
@@ -97,8 +106,8 @@ func writeProject(
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 
-	json.NewEncoder(w).Encode(projectResponse{
-		ID:   string(project.ID()),
-		Name: string(project.Name()),
+	_ = json.NewEncoder(w).Encode(projectResponse{
+		ID:   project.ID().String(),
+		Name: project.Name().String(),
 	})
 }
