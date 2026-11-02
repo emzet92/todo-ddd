@@ -1,0 +1,3 @@
+# Ignore locally generated reports and the reporting binary.
+*
+!.gitignore
